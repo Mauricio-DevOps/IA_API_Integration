@@ -102,6 +102,7 @@ public sealed class OpenAiTranscriptionService : IOpenAiTranscriptionService
         {
             var normalizedContentType = contentType.Split(';', 2, StringSplitOptions.TrimEntries)[0];
             if (!normalizedContentType.StartsWith("audio/", StringComparison.OrdinalIgnoreCase)
+                && !normalizedContentType.StartsWith("video/", StringComparison.OrdinalIgnoreCase)
                 && normalizedContentType != "application/octet-stream")
             {
                 throw new InvalidOperationException($"Unsupported audio content type '{command.ContentType}'.");
