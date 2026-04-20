@@ -13,6 +13,11 @@ public sealed class IAController : ControllerBase
     private const string DefaultModel = "gpt-4o-mini";
     private const double DefaultTemperature = 0.7d;
     private const string DefaultSystemPrompt = "You are a helpful AI assistant.";
+    private static readonly HashSet<string> SupportedAudioExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".ogg",
+        ".webm"
+    };
 
     private readonly IOpenAiService _openAiService;
     private readonly IOpenAiResponsesService _responsesService;
@@ -101,6 +106,11 @@ public sealed class IAController : ControllerBase
 
         await using var audioStream = request.AudioFile.OpenReadStream();
         var fileName = BuildTranscriptionFileName(request.AudioFile.FileName);
+        if (fileName is null)
+        {
+            return BadRequest("AudioFile must have a .ogg or .webm extension.");
+        }
+
         var command = new AudioTranscriptionCommand(
             audioStream,
             fileName,
@@ -111,7 +121,7 @@ public sealed class IAController : ControllerBase
         return Content(transcript, "text/plain");
     }
 
-    private static string BuildTranscriptionFileName(string originalFileName)
+    private static string? BuildTranscriptionFileName(string originalFileName)
     {
         var safeBaseName = Path.GetFileNameWithoutExtension(originalFileName);
         if (string.IsNullOrWhiteSpace(safeBaseName))
@@ -119,6 +129,12 @@ public sealed class IAController : ControllerBase
             safeBaseName = "audio";
         }
 
-        return $"{safeBaseName}.ogg";
+        var extension = Path.GetExtension(originalFileName);
+        if (string.IsNullOrWhiteSpace(extension) || !SupportedAudioExtensions.Contains(extension))
+        {
+            return null;
+        }
+
+        return $"{safeBaseName}{extension}";
     }
 }
