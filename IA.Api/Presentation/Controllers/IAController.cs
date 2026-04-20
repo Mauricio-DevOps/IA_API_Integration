@@ -16,15 +16,18 @@ public sealed class IAController : ControllerBase
 
     private readonly IOpenAiService _openAiService;
     private readonly IOpenAiResponsesService _responsesService;
+    private readonly IOpenAiTranscriptionService _transcriptionService;
     private readonly IOpenAiWorkflowService _workflowService;
 
     public IAController(
         IOpenAiService openAiService,
         IOpenAiResponsesService responsesService,
+        IOpenAiTranscriptionService transcriptionService,
         IOpenAiWorkflowService workflowService)
     {
         _openAiService = openAiService;
         _responsesService = responsesService;
+        _transcriptionService = transcriptionService;
         _workflowService = workflowService;
     }
 
@@ -82,5 +85,40 @@ public sealed class IAController : ControllerBase
 
         var response = await _workflowService.CreateSessionAsync(command, cancellationToken);
         return Ok(response);
+    }
+
+    [HttpPost("transcribe")]
+    [Consumes("multipart/form-data")]
+    [ProducesResponseType(typeof(string), StatusCodes.Status200OK)]
+    public async Task<ActionResult<string>> TranscribeAudio(
+        [FromForm] CreateAudioTranscriptionRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (request.AudioFile.Length <= 0)
+        {
+            return BadRequest("AudioFile cannot be empty.");
+        }
+
+        await using var audioStream = request.AudioFile.OpenReadStream();
+        var fileName = BuildTranscriptionFileName(request.AudioFile.FileName);
+        var command = new AudioTranscriptionCommand(
+            audioStream,
+            fileName,
+            request.AudioFile.ContentType,
+            request.AudioFile.Length);
+
+        var transcript = await _transcriptionService.TranscribeAsync(command, cancellationToken);
+        return Content(transcript, "text/plain");
+    }
+
+    private static string BuildTranscriptionFileName(string originalFileName)
+    {
+        var safeBaseName = Path.GetFileNameWithoutExtension(originalFileName);
+        if (string.IsNullOrWhiteSpace(safeBaseName))
+        {
+            safeBaseName = "audio";
+        }
+
+        return $"{safeBaseName}.ogg";
     }
 }

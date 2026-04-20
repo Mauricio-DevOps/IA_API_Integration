@@ -12,6 +12,7 @@ builder.Services.AddScoped<ISumService, SumService>();
 builder.Services.Configure<OpenAiOptions>(builder.Configuration.GetSection(OpenAiOptions.SectionName));
 builder.Services.AddHttpClient<IOpenAiService, OpenAiService>();
 builder.Services.AddHttpClient<IOpenAiResponsesService, OpenAiResponsesService>();
+builder.Services.AddHttpClient<IOpenAiTranscriptionService, OpenAiTranscriptionService>();
 builder.Services.AddHttpClient<IOpenAiWorkflowService, OpenAiWorkflowService>();
 
 var app = builder.Build();
