@@ -7,4 +7,8 @@ public interface IOpenAiResponsesService
     Task<AssistantResponse> CreateResponseAsync(
         ResponsesCommand command,
         CancellationToken cancellationToken = default);
+
+    Task<PromptConversationResponse> CreatePromptResponseAsync(
+        PromptConversationCommand command,
+        CancellationToken cancellationToken = default);
 }

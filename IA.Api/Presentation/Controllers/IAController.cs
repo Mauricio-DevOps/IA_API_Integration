@@ -123,6 +123,42 @@ public sealed class IAController : ControllerBase
         }
     }
 
+    [HttpPost("prompts/{promptId}/messages")]
+    [ProducesResponseType(typeof(PromptConversationResponse), StatusCodes.Status200OK)]
+    public async Task<ActionResult<PromptConversationResponse>> SendPromptMessage(
+        [FromRoute] string promptId,
+        [FromBody] PromptConversationRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(promptId))
+        {
+            return PlainTextError(StatusCodes.Status400BadRequest, "promptId is required.");
+        }
+
+        try
+        {
+            var command = new PromptConversationCommand(
+                promptId,
+                request.Message,
+                request.ConversationId);
+
+            var response = await _responsesService.CreatePromptResponseAsync(command, cancellationToken);
+            return Ok(response);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return PlainTextError(StatusCodes.Status400BadRequest, ex.Message);
+        }
+        catch (HttpRequestException ex)
+        {
+            return PlainTextError(StatusCodes.Status502BadGateway, ex.Message);
+        }
+        catch (Exception ex)
+        {
+            return PlainTextError(StatusCodes.Status500InternalServerError, ex.Message);
+        }
+    }
+
     [HttpPost("workflow/session")]
     [ProducesResponseType(typeof(WorkflowSessionResponse), StatusCodes.Status200OK)]
     public async Task<ActionResult<WorkflowSessionResponse>> CreateWorkflowSession(

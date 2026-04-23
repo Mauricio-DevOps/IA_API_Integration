@@ -62,6 +62,40 @@ public sealed class OpenAiResponsesService : IOpenAiResponsesService
         };
     }
 
+    public async Task<PromptConversationResponse> CreatePromptResponseAsync(
+        PromptConversationCommand command,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureApiKey();
+
+        var payload = SerializePromptPayload(command);
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "responses")
+        {
+            Content = new StringContent(payload, Encoding.UTF8, "application/json")
+        };
+
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _options.ApiKey);
+
+        using var response = await _httpClient.SendAsync(request, cancellationToken);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
+            throw new HttpRequestException(
+                $"OpenAI responses API returned {(int)response.StatusCode} {response.StatusCode}: {errorContent}");
+        }
+
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+
+        var responseId = document.RootElement.GetProperty("id").GetString() ?? string.Empty;
+        var outputText = ExtractOutputText(document.RootElement);
+        var conversationId = ExtractConversationId(document.RootElement);
+
+        return new PromptConversationResponse(responseId, conversationId, outputText);
+    }
+
     private string SerializePayload(ResponsesCommand command)
     {
         var body = new Dictionary<string, object?>
@@ -100,6 +134,25 @@ public sealed class OpenAiResponsesService : IOpenAiResponsesService
         return JsonSerializer.Serialize(body, SerializerOptions);
     }
 
+    private string SerializePromptPayload(PromptConversationCommand command)
+    {
+        var body = new Dictionary<string, object?>
+        {
+            ["prompt"] = new
+            {
+                id = command.PromptId
+            },
+            ["input"] = command.Message
+        };
+
+        if (!string.IsNullOrWhiteSpace(command.ConversationId))
+        {
+            body["conversation"] = command.ConversationId;
+        }
+
+        return JsonSerializer.Serialize(body, SerializerOptions);
+    }
+
     private static string ExtractOutputText(JsonElement root)
     {
         if (root.TryGetProperty("output", out var outputElements))
@@ -124,12 +177,21 @@ public sealed class OpenAiResponsesService : IOpenAiResponsesService
         return string.Empty;
     }
 
+    private static string ExtractConversationId(JsonElement root)
+    {
+        if (root.TryGetProperty("conversation", out var conversation)
+            && conversation.ValueKind == JsonValueKind.Object
+            && conversation.TryGetProperty("id", out var conversationId))
+        {
+            return conversationId.GetString() ?? string.Empty;
+        }
+
+        return string.Empty;
+    }
+
     private void EnsureConfiguration()
     {
-        if (string.IsNullOrWhiteSpace(_options.ApiKey))
-        {
-            throw new InvalidOperationException("OpenAI API key is not configured.");
-        }
+        EnsureApiKey();
 
         if (string.IsNullOrWhiteSpace(_options.ResponsesModel))
         {
@@ -139,6 +201,14 @@ public sealed class OpenAiResponsesService : IOpenAiResponsesService
         if (string.IsNullOrWhiteSpace(_options.SystemPrompt))
         {
             throw new InvalidOperationException("OpenAI system prompt is not configured.");
+        }
+    }
+
+    private void EnsureApiKey()
+    {
+        if (string.IsNullOrWhiteSpace(_options.ApiKey) || _options.ApiKey == "YOUR_OPENAI_API_KEY")
+        {
+            throw new InvalidOperationException("OpenAI API key is not configured.");
         }
     }
 }
