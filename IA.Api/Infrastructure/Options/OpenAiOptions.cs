@@ -8,7 +8,7 @@ public sealed class OpenAiOptions
 
     public string BaseUrl { get; set; } = "https://api.openai.com/v1/";
     public string ApiKey { get; set; } = string.Empty;
-    public string ResponsesModel { get; set; } = "o4-mini";
+    public string ResponsesModel { get; set; } = "gpt-5.4-nano";
     public string TranscriptionModel { get; set; } = "whisper-1";
     public string SystemPrompt { get; set; } = "Responda sempre em português de forma curta e objetiva.";
     public List<string> VectorStoreIds { get; set; } = new();
