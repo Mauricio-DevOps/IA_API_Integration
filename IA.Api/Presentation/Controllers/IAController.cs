@@ -42,24 +42,39 @@ public sealed class IAController : ControllerBase
         [FromBody] CreateIaChatRequest request,
         CancellationToken cancellationToken)
     {
-        var systemPrompt = string.IsNullOrWhiteSpace(request.SystemPrompt)
-            ? DefaultSystemPrompt
-            : request.SystemPrompt!;
-
-        var messages = new List<OpenAiChatMessage>
+        try
         {
-            new("system", systemPrompt),
-            new("user", request.Prompt)
-        };
+            var systemPrompt = string.IsNullOrWhiteSpace(request.SystemPrompt)
+                ? DefaultSystemPrompt
+                : request.SystemPrompt!;
 
-        var completionRequest = new OpenAiChatCompletionRequest(
-            request.Model ?? DefaultModel,
-            messages,
-            request.Temperature ?? DefaultTemperature);
+            var messages = new List<OpenAiChatMessage>
+            {
+                new("system", systemPrompt),
+                new("user", request.Prompt)
+            };
 
-        var response = await _openAiService.CreateChatCompletionAsync(completionRequest, cancellationToken);
+            var completionRequest = new OpenAiChatCompletionRequest(
+                request.Model ?? DefaultModel,
+                messages,
+                request.Temperature ?? DefaultTemperature);
 
-        return Ok(response);
+            var response = await _openAiService.CreateChatCompletionAsync(completionRequest, cancellationToken);
+
+            return Ok(response);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return PlainTextError(StatusCodes.Status400BadRequest, ex.Message);
+        }
+        catch (HttpRequestException ex)
+        {
+            return PlainTextError(StatusCodes.Status502BadGateway, ex.Message);
+        }
+        catch (Exception ex)
+        {
+            return PlainTextError(StatusCodes.Status500InternalServerError, ex.Message);
+        }
     }
 
     [HttpPost("ask")]
@@ -75,6 +90,37 @@ public sealed class IAController : ControllerBase
 
         var response = await _responsesService.CreateResponseAsync(command, cancellationToken);
         return Ok(response);
+    }
+
+    [HttpPost("ask/vector-store")]
+    [ProducesResponseType(typeof(AssistantResponse), StatusCodes.Status200OK)]
+    public async Task<ActionResult<AssistantResponse>> AskAssistantWithVectorStore(
+        [FromBody] AskIaWithVectorStoreRequest request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var command = new ResponsesCommand(
+                request.Prompt,
+                request.PreviousResponseId,
+                useFileSearch: true,
+                vectorStoreIds: new[] { request.VectorStoreId });
+
+            var response = await _responsesService.CreateResponseAsync(command, cancellationToken);
+            return Ok(response);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return PlainTextError(StatusCodes.Status400BadRequest, ex.Message);
+        }
+        catch (HttpRequestException ex)
+        {
+            return PlainTextError(StatusCodes.Status502BadGateway, ex.Message);
+        }
+        catch (Exception ex)
+        {
+            return PlainTextError(StatusCodes.Status500InternalServerError, ex.Message);
+        }
     }
 
     [HttpPost("workflow/session")]
@@ -101,24 +147,41 @@ public sealed class IAController : ControllerBase
     {
         if (request.AudioFile.Length <= 0)
         {
-            return BadRequest("AudioFile cannot be empty.");
+            return PlainTextError(StatusCodes.Status400BadRequest, "AudioFile cannot be empty.");
         }
 
         await using var audioStream = request.AudioFile.OpenReadStream();
         var fileName = BuildTranscriptionFileName(request.AudioFile.FileName);
         if (fileName is null)
         {
-            return BadRequest("AudioFile must have a .ogg or .webm extension.");
+            return PlainTextError(
+                StatusCodes.Status400BadRequest,
+                "AudioFile must have a .ogg or .webm extension.");
         }
 
-        var command = new AudioTranscriptionCommand(
-            audioStream,
-            fileName,
-            request.AudioFile.ContentType,
-            request.AudioFile.Length);
+        try
+        {
+            var command = new AudioTranscriptionCommand(
+                audioStream,
+                fileName,
+                request.AudioFile.ContentType,
+                request.AudioFile.Length);
 
-        var transcript = await _transcriptionService.TranscribeAsync(command, cancellationToken);
-        return Content(transcript, "text/plain");
+            var transcript = await _transcriptionService.TranscribeAsync(command, cancellationToken);
+            return Content(transcript, "text/plain");
+        }
+        catch (InvalidOperationException ex)
+        {
+            return PlainTextError(StatusCodes.Status400BadRequest, ex.Message);
+        }
+        catch (HttpRequestException ex)
+        {
+            return PlainTextError(StatusCodes.Status502BadGateway, ex.Message);
+        }
+        catch (Exception ex)
+        {
+            return PlainTextError(StatusCodes.Status500InternalServerError, ex.Message);
+        }
     }
 
     private static string? BuildTranscriptionFileName(string originalFileName)
@@ -136,5 +199,15 @@ public sealed class IAController : ControllerBase
         }
 
         return $"{safeBaseName}{extension}";
+    }
+
+    private static ContentResult PlainTextError(int statusCode, string message)
+    {
+        return new ContentResult
+        {
+            StatusCode = statusCode,
+            ContentType = "text/plain",
+            Content = message
+        };
     }
 }

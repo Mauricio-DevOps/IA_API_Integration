@@ -71,14 +71,18 @@ public sealed class OpenAiResponsesService : IOpenAiResponsesService
             ["input"] = command.Prompt
         };
 
-        if (command.UseFileSearch && _options.VectorStoreIds.Count > 0)
+        var vectorStoreIds = command.VectorStoreIds is { Count: > 0 }
+            ? command.VectorStoreIds
+            : _options.VectorStoreIds;
+
+        if (command.UseFileSearch && vectorStoreIds.Count > 0)
         {
             body["tools"] = new[]
             {
                 new
                 {
                     type = "file_search",
-                    vector_store_ids = _options.VectorStoreIds
+                    vector_store_ids = vectorStoreIds
                 }
             };
 

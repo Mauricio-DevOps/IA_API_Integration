@@ -42,7 +42,12 @@ public sealed class OpenAiService : IOpenAiService
 
         using var response = await _httpClient.SendAsync(httpRequest, cancellationToken);
 
-        response.EnsureSuccessStatusCode();
+        if (!response.IsSuccessStatusCode)
+        {
+            var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
+            throw new HttpRequestException(
+                $"OpenAI chat completions API returned {(int)response.StatusCode} {response.StatusCode}: {errorContent}");
+        }
 
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
 
@@ -61,7 +66,7 @@ public sealed class OpenAiService : IOpenAiService
 
     private void EnsureApiKey()
     {
-        if (string.IsNullOrWhiteSpace(_options.ApiKey))
+        if (string.IsNullOrWhiteSpace(_options.ApiKey) || _options.ApiKey == "YOUR_OPENAI_API_KEY")
         {
             throw new InvalidOperationException("OpenAI API key is not configured.");
         }
