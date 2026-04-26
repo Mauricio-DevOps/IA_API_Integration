@@ -68,7 +68,11 @@ public sealed class OpenAiResponsesService : IOpenAiResponsesService
     {
         EnsureApiKey();
 
-        var payload = SerializePromptPayload(command);
+        var conversationId = string.IsNullOrWhiteSpace(command.ConversationId)
+            ? await CreateConversationAsync(cancellationToken)
+            : command.ConversationId;
+
+        var payload = SerializePromptPayload(command, conversationId);
 
         using var request = new HttpRequestMessage(HttpMethod.Post, "responses")
         {
@@ -91,9 +95,33 @@ public sealed class OpenAiResponsesService : IOpenAiResponsesService
 
         var responseId = document.RootElement.GetProperty("id").GetString() ?? string.Empty;
         var outputText = ExtractOutputText(document.RootElement);
-        var conversationId = ExtractConversationId(document.RootElement);
+        conversationId = ExtractConversationId(document.RootElement, conversationId);
 
         return new PromptConversationResponse(responseId, conversationId, outputText);
+    }
+
+    private async Task<string> CreateConversationAsync(CancellationToken cancellationToken)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "conversations")
+        {
+            Content = new StringContent("{}", Encoding.UTF8, "application/json")
+        };
+
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _options.ApiKey);
+
+        using var response = await _httpClient.SendAsync(request, cancellationToken);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
+            throw new HttpRequestException(
+                $"OpenAI conversations API returned {(int)response.StatusCode} {response.StatusCode}: {errorContent}");
+        }
+
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+
+        return document.RootElement.GetProperty("id").GetString() ?? string.Empty;
     }
 
     private string SerializePayload(ResponsesCommand command)
@@ -134,7 +162,7 @@ public sealed class OpenAiResponsesService : IOpenAiResponsesService
         return JsonSerializer.Serialize(body, SerializerOptions);
     }
 
-    private string SerializePromptPayload(PromptConversationCommand command)
+    private string SerializePromptPayload(PromptConversationCommand command, string conversationId)
     {
         var body = new Dictionary<string, object?>
         {
@@ -142,13 +170,9 @@ public sealed class OpenAiResponsesService : IOpenAiResponsesService
             {
                 id = command.PromptId
             },
-            ["input"] = command.Message
+            ["input"] = command.Message,
+            ["conversation"] = conversationId
         };
-
-        if (!string.IsNullOrWhiteSpace(command.ConversationId))
-        {
-            body["conversation"] = command.ConversationId;
-        }
 
         return JsonSerializer.Serialize(body, SerializerOptions);
     }
@@ -177,7 +201,7 @@ public sealed class OpenAiResponsesService : IOpenAiResponsesService
         return string.Empty;
     }
 
-    private static string ExtractConversationId(JsonElement root)
+    private static string ExtractConversationId(JsonElement root, string fallbackConversationId)
     {
         if (root.TryGetProperty("conversation", out var conversation)
             && conversation.ValueKind == JsonValueKind.Object
@@ -186,7 +210,7 @@ public sealed class OpenAiResponsesService : IOpenAiResponsesService
             return conversationId.GetString() ?? string.Empty;
         }
 
-        return string.Empty;
+        return fallbackConversationId;
     }
 
     private void EnsureConfiguration()
