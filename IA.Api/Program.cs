@@ -14,6 +14,7 @@ builder.Services.AddHttpClient<IOpenAiService, OpenAiService>();
 builder.Services.AddHttpClient<IOpenAiResponsesService, OpenAiResponsesService>();
 builder.Services.AddHttpClient<IOpenAiTranscriptionService, OpenAiTranscriptionService>();
 builder.Services.AddHttpClient<IOpenAiWorkflowService, OpenAiWorkflowService>();
+builder.Services.AddHttpClient<IOpenAiImageService, OpenAiImageService>();
 
 var app = builder.Build();
 

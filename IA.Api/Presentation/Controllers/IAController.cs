@@ -23,17 +23,20 @@ public sealed class IAController : ControllerBase
     private readonly IOpenAiResponsesService _responsesService;
     private readonly IOpenAiTranscriptionService _transcriptionService;
     private readonly IOpenAiWorkflowService _workflowService;
+    private readonly IOpenAiImageService _imageService;
 
     public IAController(
         IOpenAiService openAiService,
         IOpenAiResponsesService responsesService,
         IOpenAiTranscriptionService transcriptionService,
-        IOpenAiWorkflowService workflowService)
+        IOpenAiWorkflowService workflowService,
+        IOpenAiImageService imageService)
     {
         _openAiService = openAiService;
         _responsesService = responsesService;
         _transcriptionService = transcriptionService;
         _workflowService = workflowService;
+        _imageService = imageService;
     }
 
     [HttpPost("chat")]
@@ -172,6 +175,40 @@ public sealed class IAController : ControllerBase
 
         var response = await _workflowService.CreateSessionAsync(command, cancellationToken);
         return Ok(response);
+    }
+
+    [HttpPost("image")]
+    [ProducesResponseType(typeof(ImageGenerationResponse), StatusCodes.Status200OK)]
+    public async Task<ActionResult<ImageGenerationResponse>> GenerateImage(
+        [FromBody] CreateImageGenerationRequest request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var command = new ImageGenerationCommand(
+                request.Prompt,
+                request.Model,
+                request.Size,
+                request.Quality,
+                request.Background,
+                request.OutputFormat,
+                request.N);
+
+            var response = await _imageService.GenerateImageAsync(command, cancellationToken);
+            return Ok(response);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return PlainTextError(StatusCodes.Status400BadRequest, ex.Message);
+        }
+        catch (HttpRequestException ex)
+        {
+            return PlainTextError(StatusCodes.Status502BadGateway, ex.Message);
+        }
+        catch (Exception ex)
+        {
+            return PlainTextError(StatusCodes.Status500InternalServerError, ex.Message);
+        }
     }
 
     [HttpPost("transcribe")]
